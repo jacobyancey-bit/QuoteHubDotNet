@@ -6,6 +6,7 @@ namespace QuoteHub.Api.Data;
 public class QuoteDbContext(DbContextOptions<QuoteDbContext> options) : DbContext(options)
 {
     public DbSet<Quote> Quotes => Set<Quote>();
+    public DbSet<Tag> Tags => Set<Tag>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -30,7 +31,12 @@ public class QuoteDbContext(DbContextOptions<QuoteDbContext> options) : DbContex
             // Global Query Filter: automatically appends "WHERE IsDeleted = 0" to every query
             entity.HasQueryFilter(q => !q.IsDeleted);
 
-            // Seed initial data through migrations
+            // Many-to-many relationship with Tag via QuoteTags join table
+            entity.HasMany(q => q.Tags)
+                .WithMany(t => t.Quotes)
+                .UsingEntity(j => j.ToTable("QuoteTags"));
+
+            // Seed initial data
             entity.HasData(
                 new Quote
                 {
@@ -60,6 +66,17 @@ public class QuoteDbContext(DbContextOptions<QuoteDbContext> options) : DbContex
                     IsDeleted = false
                 }
             );
+        });
+
+        modelBuilder.Entity<Tag>(entity =>
+        {
+            entity.HasKey(t => t.Id);
+
+            entity.Property(t => t.Name)
+                .IsRequired()
+                .HasMaxLength(40);
+
+            entity.HasIndex(t => t.Name).IsUnique();
         });
     }
 }

@@ -11,6 +11,7 @@ public class EfQuoteService(QuoteDbContext db, ILogger<EfQuoteService> logger) :
 
     public async Task<PagedResult<QuoteResponse>> GetAllAsync(
         string? category = null,
+        string? tag = null,
         int page = 1,
         int pageSize = 20,
         CancellationToken ct = default)
@@ -22,8 +23,14 @@ public class EfQuoteService(QuoteDbContext db, ILogger<EfQuoteService> logger) :
 
         if (!string.IsNullOrWhiteSpace(category))
         {
-            var normalized = category.Trim().ToLower();
-            query = query.Where(q => q.Category.ToLower() == normalized);
+            var normalizedCategory = category.Trim().ToLower();
+            query = query.Where(q => q.Category.ToLower() == normalizedCategory);
+        }
+
+        if (!string.IsNullOrWhiteSpace(tag))
+        {
+            var normalizedTag = tag.Trim().ToLower();
+            query = query.Where(q => q.Tags.Any(t => t.Name == normalizedTag));
         }
 
         var totalCount = await query.CountAsync(ct);
@@ -32,7 +39,13 @@ public class EfQuoteService(QuoteDbContext db, ILogger<EfQuoteService> logger) :
             .OrderBy(q => q.Id)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(q => new QuoteResponse(q.Id, q.Text, q.Author, q.Category, q.CreatedAtUtc))
+            .Select(q => new QuoteResponse(
+                q.Id,
+                q.Text,
+                q.Author,
+                q.Category,
+                q.CreatedAtUtc,
+                q.Tags.OrderBy(t => t.Name).Select(t => t.Name).ToList()))
             .ToListAsync(ct);
 
         return new PagedResult<QuoteResponse>(items, page, pageSize, totalCount);
@@ -43,7 +56,13 @@ public class EfQuoteService(QuoteDbContext db, ILogger<EfQuoteService> logger) :
         return await db.Quotes
             .AsNoTracking()
             .Where(q => q.Id == id)
-            .Select(q => new QuoteResponse(q.Id, q.Text, q.Author, q.Category, q.CreatedAtUtc))
+            .Select(q => new QuoteResponse(
+                q.Id,
+                q.Text,
+                q.Author,
+                q.Category,
+                q.CreatedAtUtc,
+                q.Tags.OrderBy(t => t.Name).Select(t => t.Name).ToList()))
             .FirstOrDefaultAsync(ct);
     }
 
@@ -61,7 +80,13 @@ public class EfQuoteService(QuoteDbContext db, ILogger<EfQuoteService> logger) :
             .AsNoTracking()
             .OrderBy(q => q.Id)
             .Skip(skip)
-            .Select(q => new QuoteResponse(q.Id, q.Text, q.Author, q.Category, q.CreatedAtUtc))
+            .Select(q => new QuoteResponse(
+                q.Id,
+                q.Text,
+                q.Author,
+                q.Category,
+                q.CreatedAtUtc,
+                q.Tags.OrderBy(t => t.Name).Select(t => t.Name).ToList()))
             .FirstOrDefaultAsync(ct);
     }
 
@@ -78,12 +103,20 @@ public class EfQuoteService(QuoteDbContext db, ILogger<EfQuoteService> logger) :
             .AsNoTracking()
             .Where(q => EF.Functions.Like(q.Text.ToLower(), pattern) || EF.Functions.Like(q.Author.ToLower(), pattern))
             .OrderBy(q => q.Id)
-            .Select(q => new QuoteResponse(q.Id, q.Text, q.Author, q.Category, q.CreatedAtUtc))
+            .Select(q => new QuoteResponse(
+                q.Id,
+                q.Text,
+                q.Author,
+                q.Category,
+                q.CreatedAtUtc,
+                q.Tags.OrderBy(t => t.Name).Select(t => t.Name).ToList()))
             .ToListAsync(ct);
     }
 
     public async Task<QuoteResponse> CreateAsync(CreateQuoteRequest request, CancellationToken ct = default)
     {
+        var tags = await ResolveTagsAsync(request.Tags, ct);
+
         var quote = new Quote
         {
             Text = request.Text.Trim(),
@@ -91,7 +124,8 @@ public class EfQuoteService(QuoteDbContext db, ILogger<EfQuoteService> logger) :
             Category = string.IsNullOrWhiteSpace(request.Category)
                 ? "General"
                 : request.Category.Trim(),
-            CreatedAtUtc = DateTime.UtcNow
+            CreatedAtUtc = DateTime.UtcNow,
+            Tags = tags
         };
 
         db.Quotes.Add(quote);
@@ -105,7 +139,10 @@ public class EfQuoteService(QuoteDbContext db, ILogger<EfQuoteService> logger) :
 
     public async Task<QuoteResponse?> UpdateAsync(int id, UpdateQuoteRequest request, CancellationToken ct = default)
     {
-        var quote = await db.Quotes.FirstOrDefaultAsync(q => q.Id == id, ct);
+        var quote = await db.Quotes
+            .Include(q => q.Tags)
+            .FirstOrDefaultAsync(q => q.Id == id, ct);
+
         if (quote is null)
         {
             return null;
@@ -114,6 +151,15 @@ public class EfQuoteService(QuoteDbContext db, ILogger<EfQuoteService> logger) :
         quote.Text = request.Text.Trim();
         quote.Author = request.Author.Trim();
         quote.Category = request.Category.Trim();
+
+        if (request.Tags is not null)
+        {
+            quote.Tags.Clear();
+            foreach (var tag in await ResolveTagsAsync(request.Tags, ct))
+            {
+                quote.Tags.Add(tag);
+            }
+        }
 
         await db.SaveChangesAsync(ct);
 
@@ -130,12 +176,53 @@ public class EfQuoteService(QuoteDbContext db, ILogger<EfQuoteService> logger) :
         }
 
         quote.IsDeleted = true;
+        quote.DeletedAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
 
         logger.LogInformation("Soft-deleted quote {QuoteId}", quote.Id);
         return true;
     }
 
+    private async Task<List<Tag>> ResolveTagsAsync(IReadOnlyList<string>? rawTags, CancellationToken ct)
+    {
+        if (rawTags is null || rawTags.Count == 0)
+        {
+            return [];
+        }
+
+        var names = rawTags
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Select(t => t.Trim().ToLower())
+            .Distinct()
+            .ToList();
+
+        if (names.Count == 0)
+        {
+            return [];
+        }
+
+        var existing = await db.Tags
+            .Where(t => names.Contains(t.Name))
+            .ToListAsync(ct);
+
+        var existingNames = existing.Select(t => t.Name).ToHashSet();
+
+        foreach (var name in names.Where(n => !existingNames.Contains(n)))
+        {
+            var created = new Tag { Name = name };
+            db.Tags.Add(created);
+            existing.Add(created);
+        }
+
+        return existing;
+    }
+
     private static QuoteResponse ToResponse(Quote quote) =>
-        new(quote.Id, quote.Text, quote.Author, quote.Category, quote.CreatedAtUtc);
+        new(
+            quote.Id,
+            quote.Text,
+            quote.Author,
+            quote.Category,
+            quote.CreatedAtUtc,
+            quote.Tags.OrderBy(t => t.Name).Select(t => t.Name).ToList());
 }

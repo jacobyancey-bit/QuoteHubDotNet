@@ -39,6 +39,7 @@ public class InMemoryQuoteService : IQuoteService
 
     public Task<PagedResult<QuoteResponse>> GetAllAsync(
         string? category = null,
+        string? tag = null,
         int page = 1,
         int pageSize = 20,
         CancellationToken ct = default)
@@ -54,6 +55,12 @@ public class InMemoryQuoteService : IQuoteService
             {
                 query = query.Where(q =>
                     q.Category.Equals(category.Trim(), StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrWhiteSpace(tag))
+            {
+                var normalizedTag = tag.Trim().ToLower();
+                query = query.Where(q => q.Tags.Any(t => t.Name == normalizedTag));
             }
 
             var matched = query.OrderBy(q => q.Id).ToList();
@@ -117,6 +124,13 @@ public class InMemoryQuoteService : IQuoteService
     {
         lock (_lock)
         {
+            var tags = (request.Tags ?? [])
+                .Where(t => !string.IsNullOrWhiteSpace(t))
+                .Select(t => t.Trim().ToLower())
+                .Distinct()
+                .Select(name => new Tag { Name = name })
+                .ToList();
+
             var quote = new Quote
             {
                 Id = _nextId++,
@@ -125,7 +139,8 @@ public class InMemoryQuoteService : IQuoteService
                 Category = string.IsNullOrWhiteSpace(request.Category)
                     ? "General"
                     : request.Category.Trim(),
-                CreatedAtUtc = DateTime.UtcNow
+                CreatedAtUtc = DateTime.UtcNow,
+                Tags = tags
             };
 
             _quotes.Add(quote);
@@ -147,6 +162,16 @@ public class InMemoryQuoteService : IQuoteService
             quote.Author = request.Author.Trim();
             quote.Category = request.Category.Trim();
 
+            if (request.Tags is not null)
+            {
+                quote.Tags = request.Tags
+                    .Where(t => !string.IsNullOrWhiteSpace(t))
+                    .Select(t => t.Trim().ToLower())
+                    .Distinct()
+                    .Select(name => new Tag { Name = name })
+                    .ToList();
+            }
+
             return Task.FromResult<QuoteResponse?>(ToResponse(quote));
         }
     }
@@ -162,10 +187,17 @@ public class InMemoryQuoteService : IQuoteService
             }
 
             quote.IsDeleted = true;
+            quote.DeletedAtUtc = DateTime.UtcNow;
             return Task.FromResult(true);
         }
     }
 
     private static QuoteResponse ToResponse(Quote quote) =>
-        new(quote.Id, quote.Text, quote.Author, quote.Category, quote.CreatedAtUtc);
+        new(
+            quote.Id,
+            quote.Text,
+            quote.Author,
+            quote.Category,
+            quote.CreatedAtUtc,
+            quote.Tags.OrderBy(t => t.Name).Select(t => t.Name).ToList());
 }

@@ -10,7 +10,8 @@ public record QuoteResponse(
     string Text,
     string Author,
     string Category,
-    DateTime CreatedAtUtc
+    DateTime CreatedAtUtc,
+    IReadOnlyList<string> Tags
 );
 
 /// <summary>
@@ -37,7 +38,9 @@ public record CreateQuoteRequest(
     string Author,
 
     [StringLength(50)]
-    string Category = "General"
+    string Category = "General",
+
+    IReadOnlyList<string>? Tags = null
 );
 
 /// <summary>
@@ -51,5 +54,19 @@ public record UpdateQuoteRequest(
     string Author,
 
     [Required, StringLength(50)]
-    string Category
+    string Category,
+
+    IReadOnlyList<string>? Tags = null
+);
+
+public record LoginRequest(
+    [Required] string Username,
+    [Required] string Password
+);
+
+public record TokenResponse(
+    string AccessToken,
+    string TokenType,
+    DateTime ExpiresAtUtc,
+    string Role
 );

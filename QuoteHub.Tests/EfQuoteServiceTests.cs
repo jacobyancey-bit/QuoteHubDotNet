@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using QuoteHub.Api.Data;
 using QuoteHub.Api.Dtos;
@@ -46,7 +47,7 @@ public class EfQuoteServiceTests : IDisposable
     [Fact]
     public async Task GetAllAsync_FiltersByCategoryCaseInsensitively()
     {
-        var page = await _service.GetAllAsync("SPACE");
+        var page = await _service.GetAllAsync(category: "SPACE");
 
         var single = Assert.Single(page.Items);
         Assert.Equal("Katherine Johnson", single.Author);
@@ -65,31 +66,39 @@ public class EfQuoteServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task CreateAsync_PersistsQuoteToDatabase()
+    public async Task CreateAsync_WithTags_PersistsManyToManyAndFiltersByTag()
     {
-        var request = new CreateQuoteRequest("  Failure is not an option.  ", "  Gene Kranz  ", "Space");
+        var request = new CreateQuoteRequest(
+            "  Failure is not an option.  ",
+            "  Gene Kranz  ",
+            "Space",
+            ["NASA", "Leadership", "nasa"]); // duplicate + mixed case should normalize
 
         var created = await _service.CreateAsync(request);
-        var fetched = await _service.GetByIdAsync(created.Id);
 
-        Assert.NotNull(fetched);
-        Assert.Equal("Failure is not an option.", fetched.Text);
-        Assert.Equal("Gene Kranz", fetched.Author);
+        Assert.Equal(["leadership", "nasa"], created.Tags);
+
+        var filtered = await _service.GetAllAsync(tag: "NASA");
+        var match = Assert.Single(filtered.Items);
+        Assert.Equal(created.Id, match.Id);
     }
 
     [Fact]
-    public async Task UpdateAsync_UpdatesExistingRowInDatabase()
+    public async Task UpdateAsync_UpdatesExistingRowAndTagsInDatabase()
     {
         var updated = await _service.UpdateAsync(1, new UpdateQuoteRequest(
             "Updated quote text",
             "Katherine Johnson",
-            "NASA"));
+            "NASA",
+            ["apollo", "math"]));
 
         Assert.NotNull(updated);
         Assert.Equal("NASA", updated.Category);
+        Assert.Equal(["apollo", "math"], updated.Tags);
 
         var reloaded = await _service.GetByIdAsync(1);
         Assert.Equal("Updated quote text", reloaded?.Text);
+        Assert.Equal(["apollo", "math"], reloaded?.Tags);
     }
 
     [Fact]
@@ -106,6 +115,7 @@ public class EfQuoteServiceTests : IDisposable
 
         Assert.NotNull(rawRow);
         Assert.True(rawRow.IsDeleted);
+        Assert.NotNull(rawRow.DeletedAtUtc);
     }
 
     [Fact]
@@ -119,5 +129,31 @@ public class EfQuoteServiceTests : IDisposable
         Assert.Empty(hopperResults);
         var match = Assert.Single(simplicityResults);
         Assert.Equal("Edsger W. Dijkstra", match.Author);
+    }
+
+    [Fact]
+    public async Task SoftDeleteCleanupService_PurgesOnlyExpiredDeletedQuotes()
+    {
+        // Soft-delete #1 (recent) and #2 (expired 45 days ago)
+        await _service.DeleteAsync(1);
+        await _service.DeleteAsync(2);
+
+        var expiredRow = await _db.Quotes.IgnoreQueryFilters().FirstAsync(q => q.Id == 2);
+        expiredRow.DeletedAtUtc = DateTime.UtcNow.AddDays(-45);
+        await _db.SaveChangesAsync();
+
+        var services = new ServiceCollection();
+        services.AddDbContext<QuoteDbContext>(o => o.UseSqlite(_connection));
+        await using var sp = services.BuildServiceProvider();
+
+        var worker = new SoftDeleteCleanupService(
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<SoftDeleteCleanupService>.Instance);
+
+        var purged = await worker.PurgeExpiredQuotesAsync();
+
+        Assert.Equal(1, purged);
+        Assert.Null(await _db.Quotes.IgnoreQueryFilters().FirstOrDefaultAsync(q => q.Id == 2));
+        Assert.NotNull(await _db.Quotes.IgnoreQueryFilters().FirstOrDefaultAsync(q => q.Id == 1));
     }
 }

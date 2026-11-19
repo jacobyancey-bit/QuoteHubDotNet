@@ -1,55 +1,64 @@
 # QuoteHubDotNet
 
-A production-style **ASP.NET Core 10** REST API demonstrating layered architecture, DTOs, Dependency Injection, Entity Framework Core with SQLite migrations, global RFC 7807 `ProblemDetails` exception handling, structured logging, pagination, Scalar OpenAPI docs, and automated unit + HTTP integration testing.
+[![CI/CD - Test, Publish & Deploy](https://github.com/jacobyancey-bit/QuoteHubDotNet/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/jacobyancey-bit/QuoteHubDotNet/actions/workflows/ci-cd.yml)
+
+A production-style **ASP.NET Core 10** REST API demonstrating layered architecture, DTOs, Dependency Injection, JWT Role-Based Auth, Entity Framework Core (PostgreSQL + SQLite) with many-to-many Tags, built-in Rate Limiting & Output Caching, Background Workers, OpenTelemetry tracing, Scalar OpenAPI docs, Docker, GitHub Actions CI/CD, and multi-cloud deployment.
+
+## Live Deployments
+
+- **Azure Container Apps (Scalar UI):** https://quotehub-api.salmonbay-0fab5fd5.eastus.azurecontainerapps.io/
+- **Railway + Managed PostgreSQL (Scalar UI):** https://quotehub-api-production.up.railway.app
 
 ## Architecture
 
 ```text
 HTTP Request
    ↓
-API / Presentation Layer    →  Controllers/QuotesController.cs, Dtos/QuoteDtos.cs, Middleware/GlobalExceptionHandler.cs
+Middleware Pipeline         →  GlobalExceptionHandler (ProblemDetails), RateLimiter, OutputCache, JWT Auth, OpenTelemetry
    ↓
-Service / Business Layer    →  Services/IQuoteService.cs, Services/EfQuoteService.cs
+API / Presentation Layer    →  Controllers/QuotesController.cs, Controllers/AuthController.cs, Dtos/QuoteDtos.cs
    ↓
-Domain / Model Layer        →  Models/Quote.cs
+Service / Business Layer    →  Services/IQuoteService.cs, EfQuoteService.cs, JwtTokenService.cs, SoftDeleteCleanupService.cs
    ↓
-Data Access Layer           →  Data/QuoteDbContext.cs (EF Core 10 + SQLite Migrations)
+Domain / Model Layer        →  Models/Quote.cs, Models/Tag.cs (Many-to-Many)
+   ↓
+Data Access Layer           →  Data/QuoteDbContext.cs (EF Core 10: PostgreSQL in cloud, SQLite locally)
 ```
 
-## Key Features
+## Key Enterprise Features
 
-- **Layered Architecture & DI:** Thin controller depending on `IQuoteService` (`AddScoped`), decoupled from EF Core storage.
-- **DTOs & Validation:** Immutable C# `record` DTOs (`QuoteResponse`, `CreateQuoteRequest`, `UpdateQuoteRequest`, `PagedResult<T>`) with automatic Data Annotations validation (`400 Bad Request` `ProblemDetails`).
-- **EF Core 10 + Migrations:** Fluent API configuration, indexed `Category`, code-first migrations, data seeding, `AsNoTracking()` read projections, and a Global Query Filter (`HasQueryFilter(q => !q.IsDeleted)`) for soft deletes.
-- **Async All The Way Down:** Full `async`/`await` + `CancellationToken` propagation from HTTP requests down to SQL queries.
-- **Observability & Resilience:** `IExceptionHandler` global error handling (RFC 7807 `ProblemDetails`), structured `ILogger<T>` logging, and `/health` endpoint.
-- **Interactive Docs:** Built-in `Microsoft.AspNetCore.OpenApi` + **Scalar** UI at `/scalar/v1`.
-- **Automated Test Suite:** xUnit unit tests, in-memory SQLite EF Core tests, and full HTTP integration tests via `WebApplicationFactory<Program>`.
+- **JWT Auth & RBAC:** HS256 JWT Bearer authentication (`POST /api/v1/auth/token`) with public `GET` endpoints and `[Authorize(Roles = "Admin")]` on `POST`/`PUT`/`DELETE`.
+- **EF Core 10 & Relationships:** Many-to-many `Quote ↔ Tag` join table, Fluent API indexes, `AsNoTracking()` SQL projections, and a Global Query Filter (`HasQueryFilter(q => !q.IsDeleted)`) for soft deletes.
+- **Built-in Rate Limiting & Output Caching:** Fixed-window IP rate limiting (`429 Too Many Requests`) and 30-second Output Caching on `GET /api/v1/quotes` with automatic tag eviction on writes.
+- **Background Worker (`BackgroundService`):** `SoftDeleteCleanupService` periodically purges soft-deleted quotes older than 30 days using `IServiceScopeFactory`.
+- **Observability & Error Handling:** OpenTelemetry distributed tracing (OTLP), structured `ILogger<T>`, RFC 7807 `ProblemDetails` global exception handler, and `/health` endpoint.
+- **API Versioning & Scalar Docs:** Versioned `/api/v1/quotes` routes (with `/api/quotes` compatibility alias) and interactive Scalar OpenAPI UI at `/scalar/v1`.
+- **Three-Tier Automated Tests:** xUnit unit tests, real in-memory SQLite EF Core tests, and full HTTP integration tests via `WebApplicationFactory<Program>`.
+- **CI/CD & Containers:** Multi-stage .NET 10 `Dockerfile` + GitHub Actions workflow running `dotnet test`, publishing to `ghcr.io`, and supporting Azure Container Apps auto-deploy.
 
 ## Getting Started
 
 ```powershell
-# Restore local tools (dotnet-ef) and apply database migrations
-dotnet tool restore
-dotnet tool run dotnet-ef database update --project QuoteHub.Api
+# Run the full test suite (Unit + EF Core SQLite + HTTP Integration)
+dotnet test
 
-# Run the API
+# Run the API locally (SQLite)
 dotnet run --project QuoteHub.Api
 ```
 
-- **Scalar API Docs:** `http://localhost:5254/scalar/v1`
+- **Local Scalar Docs:** `http://localhost:5254/scalar/v1`
 - **Health Check:** `http://localhost:5254/health`
-- **Run All Tests:** `dotnet test`
 
 ## Endpoints
 
-| Method | Route | Description |
-| :--- | :--- | :--- |
-| `GET` | `/api/quotes?category=&page=1&pageSize=20` | Paginated list of quotes with optional category filter |
-| `GET` | `/api/quotes/{id}` | Get a quote by ID |
-| `GET` | `/api/quotes/random` | Get a random active quote |
-| `GET` | `/api/quotes/search?q=hopper` | Case-insensitive search across quote text & author |
-| `POST` | `/api/quotes` | Create a new quote (`201 Created` + `Location` header) |
-| `PUT` | `/api/quotes/{id}` | Update an existing quote |
-| `DELETE` | `/api/quotes/{id}` | Soft-delete a quote (`204 No Content`) |
-| `GET` | `/health` | Service health check |
+| Method | Route | Auth | Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/v1/auth/token` | Public | Issue a JWT Bearer token (`Admin` or `Reader`) |
+| `GET` | `/api/v1/quotes?category=&tag=&page=1&pageSize=20` | Public | Paginated, output-cached list of quotes |
+| `GET` | `/api/v1/quotes/{id}` | Public | Get a quote by ID (includes tags) |
+| `GET` | `/api/v1/quotes/random` | Public | Get a random active quote |
+| `GET` | `/api/v1/quotes/search?q=hopper` | Public | Case-insensitive search across text & author |
+| `POST` | `/api/v1/quotes` | **Admin** | Create a quote with optional tags (`201 Created`) |
+| `PUT` | `/api/v1/quotes/{id}` | **Admin** | Update an existing quote and its tags |
+| `DELETE` | `/api/v1/quotes/{id}` | **Admin** | Soft-delete a quote (`204 No Content`) |
+| `GET` | `/health` | Public | Service health check |

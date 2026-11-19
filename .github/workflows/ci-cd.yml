@@ -1,4 +1,4 @@
-name: CI/CD - Test & Publish Docker Image
+name: CI/CD - Test, Publish & Deploy
 
 on:
   push:
@@ -58,3 +58,21 @@ jobs:
             ghcr.io/jacobyancey-bit/quotehubdotnet:${{ github.sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/jacobyancey-bit/QuoteHubDotNet
+
+  deploy-azure:
+    name: Deploy to Azure Container Apps
+    needs: publish
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.AZURE_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Update Azure Container App image
+        run: |
+          az containerapp update \
+            --name quotehub-api \
+            --resource-group quotehub-rg \
+            --image ghcr.io/jacobyancey-bit/quotehubdotnet:${{ github.sha }}

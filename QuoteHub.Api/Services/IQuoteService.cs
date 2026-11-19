@@ -6,6 +6,7 @@ public interface IQuoteService
 {
     Task<PagedResult<QuoteResponse>> GetAllAsync(
         string? category = null,
+        string? tag = null,
         int page = 1,
         int pageSize = 20,
         CancellationToken ct = default);
