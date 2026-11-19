@@ -6,26 +6,26 @@ namespace QuoteHub.Tests;
 public class InMemoryQuoteServiceTests
 {
     [Fact]
-    public void GetAll_ReturnsSeededQuotes()
+    public async Task GetAllAsync_ReturnsSeededQuotes()
     {
         // Arrange
         var service = new InMemoryQuoteService();
 
         // Act
-        var quotes = service.GetAll();
+        var quotes = await service.GetAllAsync();
 
         // Assert
         Assert.Equal(3, quotes.Count);
     }
 
     [Fact]
-    public void GetAll_WithCategoryFilter_IsCaseInsensitive()
+    public async Task GetAllAsync_WithCategoryFilter_IsCaseInsensitive()
     {
         // Arrange
         var service = new InMemoryQuoteService();
 
         // Act
-        var spaceQuotes = service.GetAll("space");
+        var spaceQuotes = await service.GetAllAsync("space");
 
         // Assert
         var single = Assert.Single(spaceQuotes);
@@ -33,63 +33,63 @@ public class InMemoryQuoteServiceTests
     }
 
     [Fact]
-    public void Create_AssignsNextIdAndTrimsInput()
+    public async Task CreateAsync_AssignsNextIdAndTrimsInput()
     {
         // Arrange
         var service = new InMemoryQuoteService();
         var request = new CreateQuoteRequest("  Failure is not an option.  ", "  Gene Kranz  ", "  Space  ");
 
         // Act
-        var created = service.Create(request);
+        var created = await service.CreateAsync(request);
 
         // Assert
         Assert.Equal(4, created.Id);
         Assert.Equal("Failure is not an option.", created.Text);
         Assert.Equal("Gene Kranz", created.Author);
         Assert.Equal("Space", created.Category);
-        Assert.NotNull(service.GetById(4));
+        Assert.NotNull(await service.GetByIdAsync(4));
     }
 
     [Fact]
-    public void Update_WhenQuoteDoesNotExist_ReturnsNull()
+    public async Task UpdateAsync_WhenQuoteDoesNotExist_ReturnsNull()
     {
         // Arrange
         var service = new InMemoryQuoteService();
         var request = new UpdateQuoteRequest("Updated text", "Author", "General");
 
         // Act
-        var result = service.Update(999, request);
+        var result = await service.UpdateAsync(999, request);
 
         // Assert
         Assert.Null(result);
     }
 
     [Fact]
-    public void Delete_HidesQuoteFromSubsequentReads()
+    public async Task DeleteAsync_HidesQuoteFromSubsequentReads()
     {
         // Arrange
         var service = new InMemoryQuoteService();
 
         // Act
-        var deleted = service.Delete(1);
-        var fetched = service.GetById(1);
-        var remaining = service.GetAll();
+        var deleted = await service.DeleteAsync(1);
+        var fetched = await service.GetByIdAsync(1);
+        var remaining = await service.GetAllAsync();
 
         // Assert
         Assert.True(deleted);
         Assert.Null(fetched);
         Assert.Equal(2, remaining.Count);
-        Assert.False(service.Delete(1)); // Deleting twice returns false
+        Assert.False(await service.DeleteAsync(1)); // Deleting twice returns false
     }
 
     [Fact]
-    public void Search_MatchesTextOrAuthor_CaseInsensitively()
+    public async Task SearchAsync_MatchesTextOrAuthor_CaseInsensitively()
     {
         // Arrange
         var service = new InMemoryQuoteService();
 
         // Act
-        var results = service.Search("hopper");
+        var results = await service.SearchAsync("hopper");
 
         // Assert
         var match = Assert.Single(results);
@@ -99,27 +99,27 @@ public class InMemoryQuoteServiceTests
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
-    public void Search_WhenQueryIsBlank_ReturnsEmpty(string blankQuery)
+    public async Task SearchAsync_WhenQueryIsBlank_ReturnsEmpty(string blankQuery)
     {
         // Arrange
         var service = new InMemoryQuoteService();
 
         // Act
-        var results = service.Search(blankQuery);
+        var results = await service.SearchAsync(blankQuery);
 
         // Assert
         Assert.Empty(results);
     }
 
     [Fact]
-    public void Search_ExcludesDeletedQuotes()
+    public async Task SearchAsync_ExcludesDeletedQuotes()
     {
         // Arrange
         var service = new InMemoryQuoteService();
-        service.Delete(2); // Deletes Grace Hopper's quote
+        await service.DeleteAsync(2); // Deletes Grace Hopper's quote
 
         // Act
-        var results = service.Search("hopper");
+        var results = await service.SearchAsync("hopper");
 
         // Assert
         Assert.Empty(results);

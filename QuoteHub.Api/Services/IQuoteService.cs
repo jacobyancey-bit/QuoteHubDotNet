@@ -4,11 +4,11 @@ namespace QuoteHub.Api.Services;
 
 public interface IQuoteService
 {
-    IReadOnlyList<QuoteResponse> GetAll(string? category = null);
-    QuoteResponse? GetById(int id);
-    QuoteResponse? GetRandom();
-    IReadOnlyList<QuoteResponse> Search(string query);
-    QuoteResponse Create(CreateQuoteRequest request);
-    QuoteResponse? Update(int id, UpdateQuoteRequest request);
-    bool Delete(int id);
+    Task<IReadOnlyList<QuoteResponse>> GetAllAsync(string? category = null, CancellationToken ct = default);
+    Task<QuoteResponse?> GetByIdAsync(int id, CancellationToken ct = default);
+    Task<QuoteResponse?> GetRandomAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<QuoteResponse>> SearchAsync(string query, CancellationToken ct = default);
+    Task<QuoteResponse> CreateAsync(CreateQuoteRequest request, CancellationToken ct = default);
+    Task<QuoteResponse?> UpdateAsync(int id, UpdateQuoteRequest request, CancellationToken ct = default);
+    Task<bool> DeleteAsync(int id, CancellationToken ct = default);
 }

@@ -36,7 +36,7 @@ public class InMemoryQuoteService : IQuoteService
         }
     ];
 
-    public IReadOnlyList<QuoteResponse> GetAll(string? category = null)
+    public Task<IReadOnlyList<QuoteResponse>> GetAllAsync(string? category = null, CancellationToken ct = default)
     {
         lock (_lock)
         {
@@ -48,55 +48,58 @@ public class InMemoryQuoteService : IQuoteService
                     q.Category.Equals(category.Trim(), StringComparison.OrdinalIgnoreCase));
             }
 
-            return query.Select(ToResponse).ToList();
+            IReadOnlyList<QuoteResponse> results = query.Select(ToResponse).ToList();
+            return Task.FromResult(results);
         }
     }
 
-    public QuoteResponse? GetById(int id)
+    public Task<QuoteResponse?> GetByIdAsync(int id, CancellationToken ct = default)
     {
         lock (_lock)
         {
             var quote = _quotes.FirstOrDefault(q => q.Id == id && !q.IsDeleted);
-            return quote is null ? null : ToResponse(quote);
+            return Task.FromResult(quote is null ? null : ToResponse(quote));
         }
     }
 
-    public QuoteResponse? GetRandom()
+    public Task<QuoteResponse?> GetRandomAsync(CancellationToken ct = default)
     {
         lock (_lock)
         {
             var active = _quotes.Where(q => !q.IsDeleted).ToList();
             if (active.Count == 0)
             {
-                return null;
+                return Task.FromResult<QuoteResponse?>(null);
             }
 
             var pick = active[Random.Shared.Next(active.Count)];
-            return ToResponse(pick);
+            return Task.FromResult<QuoteResponse?>(ToResponse(pick));
         }
     }
 
-    public IReadOnlyList<QuoteResponse> Search(string query)
+    public Task<IReadOnlyList<QuoteResponse>> SearchAsync(string query, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(query))
         {
-            return [];
+            return Task.FromResult<IReadOnlyList<QuoteResponse>>([]);
         }
 
         var term = query.Trim();
 
         lock (_lock)
         {
-            return _quotes
+            IReadOnlyList<QuoteResponse> results = _quotes
                 .Where(q => !q.IsDeleted &&
                     (q.Text.Contains(term, StringComparison.OrdinalIgnoreCase) ||
                      q.Author.Contains(term, StringComparison.OrdinalIgnoreCase)))
                 .Select(ToResponse)
                 .ToList();
+
+            return Task.FromResult(results);
         }
     }
 
-    public QuoteResponse Create(CreateQuoteRequest request)
+    public Task<QuoteResponse> CreateAsync(CreateQuoteRequest request, CancellationToken ct = default)
     {
         lock (_lock)
         {
@@ -112,41 +115,40 @@ public class InMemoryQuoteService : IQuoteService
             };
 
             _quotes.Add(quote);
-            return ToResponse(quote);
+            return Task.FromResult(ToResponse(quote));
         }
     }
 
-    public QuoteResponse? Update(int id, UpdateQuoteRequest request)
+    public Task<QuoteResponse?> UpdateAsync(int id, UpdateQuoteRequest request, CancellationToken ct = default)
     {
         lock (_lock)
         {
             var quote = _quotes.FirstOrDefault(q => q.Id == id && !q.IsDeleted);
             if (quote is null)
             {
-                return null;
+                return Task.FromResult<QuoteResponse?>(null);
             }
 
             quote.Text = request.Text.Trim();
             quote.Author = request.Author.Trim();
             quote.Category = request.Category.Trim();
 
-            return ToResponse(quote);
+            return Task.FromResult<QuoteResponse?>(ToResponse(quote));
         }
     }
 
-    public bool Delete(int id)
+    public Task<bool> DeleteAsync(int id, CancellationToken ct = default)
     {
         lock (_lock)
         {
             var quote = _quotes.FirstOrDefault(q => q.Id == id && !q.IsDeleted);
             if (quote is null)
             {
-                return false;
+                return Task.FromResult(false);
             }
 
-            // Soft delete — keeps audit history while hiding it from API consumers
             quote.IsDeleted = true;
-            return true;
+            return Task.FromResult(true);
         }
     }
 

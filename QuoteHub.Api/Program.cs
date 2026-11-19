@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+using QuoteHub.Api.Data;
 using QuoteHub.Api.Services;
 using Scalar.AspNetCore;
 
@@ -7,10 +9,12 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
-// Register our business logic service in the DI container.
-// Singleton so the in-memory list persists across HTTP requests.
-// (When we move to EF Core + SQL, this will become AddScoped.)
-builder.Services.AddSingleton<IQuoteService, InMemoryQuoteService>();
+// Register EF Core DbContext (automatically registered as Scoped!)
+builder.Services.AddDbContext<QuoteDbContext>(options =>
+    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// Register our EF Core-backed service as Scoped (matches QuoteDbContext's Scoped lifetime).
+builder.Services.AddScoped<IQuoteService, EfQuoteService>();
 
 var app = builder.Build();
 
