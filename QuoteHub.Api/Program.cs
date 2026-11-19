@@ -22,7 +22,8 @@ if (Environment.GetEnvironmentVariable("PORT") is { Length: > 0 } port)
 // Core API, OpenAPI & Health Checks
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
-builder.Services.AddHealthChecks();
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<QuoteDbContext>(name: "database");
 
 // Global RFC 7807 ProblemDetails exception handling
 builder.Services.AddProblemDetails();
@@ -97,7 +98,14 @@ builder.Services.AddDbContext<QuoteDbContext>(options =>
 {
     if (!string.IsNullOrWhiteSpace(databaseUrl))
     {
-        options.UseNpgsql(BuildNpgsqlConnectionString(databaseUrl));
+        options.UseNpgsql(BuildNpgsqlConnectionString(databaseUrl), npgsqlOptions =>
+        {
+            // Enterprise Resiliency: automatically retries transient database connection failures
+            npgsqlOptions.EnableRetryOnFailure(
+                maxRetryCount: 5,
+                maxRetryDelay: TimeSpan.FromSeconds(10),
+                errorCodesToAdd: null);
+        });
     }
     else
     {

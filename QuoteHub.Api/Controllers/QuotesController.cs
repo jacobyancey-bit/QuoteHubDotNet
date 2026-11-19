@@ -45,6 +45,17 @@ public class QuotesController(IQuoteService quoteService, IOutputCacheStore cach
         return quote is null ? NotFound() : Ok(quote);
     }
 
+    [HttpGet("daily")]
+    [AllowAnonymous]
+    [OutputCache(Duration = 3600)] // Cache for 1 hour
+    [ProducesResponseType(typeof(QuoteResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<QuoteResponse>> GetDaily(CancellationToken ct)
+    {
+        var quote = await quoteService.GetDailyQuoteAsync(ct);
+        return quote is null ? NotFound() : Ok(quote);
+    }
+
     [HttpGet("search")]
     [AllowAnonymous]
     [ProducesResponseType(typeof(IReadOnlyList<QuoteResponse>), StatusCodes.Status200OK)]

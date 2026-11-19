@@ -98,6 +98,24 @@ public class InMemoryQuoteService : IQuoteService
         }
     }
 
+    public Task<QuoteResponse?> GetDailyQuoteAsync(CancellationToken ct = default)
+    {
+        lock (_lock)
+        {
+            var active = _quotes.Where(q => !q.IsDeleted).OrderBy(q => q.Id).ToList();
+            if (active.Count == 0)
+            {
+                return Task.FromResult<QuoteResponse?>(null);
+            }
+
+            var today = DateTime.UtcNow.Date;
+            var seed = today.Year * 10000 + today.Month * 100 + today.Day;
+            var dayIndex = Math.Abs(seed) % active.Count;
+
+            return Task.FromResult<QuoteResponse?>(ToResponse(active[dayIndex]));
+        }
+    }
+
     public Task<IReadOnlyList<QuoteResponse>> SearchAsync(string query, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(query))

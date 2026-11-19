@@ -76,6 +76,23 @@ public class QuotesApiIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task GetDaily_ReturnsConsistentQuoteForToday()
+    {
+        var response1 = await _client.GetAsync("/api/v1/quotes/daily");
+        var response2 = await _client.GetAsync("/api/v1/quotes/daily");
+
+        Assert.Equal(HttpStatusCode.OK, response1.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response2.StatusCode);
+
+        var quote1 = await response1.Content.ReadFromJsonAsync<QuoteResponse>();
+        var quote2 = await response2.Content.ReadFromJsonAsync<QuoteResponse>();
+
+        Assert.NotNull(quote1);
+        Assert.NotNull(quote2);
+        Assert.Equal(quote1.Id, quote2.Id);
+    }
+
+    [Fact]
     public async Task GetAll_SupportsV1RouteAndPagination()
     {
         var response = await _client.GetAsync("/api/v1/quotes?page=1&pageSize=2");

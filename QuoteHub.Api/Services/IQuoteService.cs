@@ -13,6 +13,7 @@ public interface IQuoteService
 
     Task<QuoteResponse?> GetByIdAsync(int id, CancellationToken ct = default);
     Task<QuoteResponse?> GetRandomAsync(CancellationToken ct = default);
+    Task<QuoteResponse?> GetDailyQuoteAsync(CancellationToken ct = default);
     Task<IReadOnlyList<QuoteResponse>> SearchAsync(string query, CancellationToken ct = default);
     Task<QuoteResponse> CreateAsync(CreateQuoteRequest request, CancellationToken ct = default);
     Task<QuoteResponse?> UpdateAsync(int id, UpdateQuoteRequest request, CancellationToken ct = default);

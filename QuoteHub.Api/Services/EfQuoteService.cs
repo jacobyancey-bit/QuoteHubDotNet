@@ -90,6 +90,33 @@ public class EfQuoteService(QuoteDbContext db, ILogger<EfQuoteService> logger) :
             .FirstOrDefaultAsync(ct);
     }
 
+    public async Task<QuoteResponse?> GetDailyQuoteAsync(CancellationToken ct = default)
+    {
+        var count = await db.Quotes.CountAsync(ct);
+        if (count == 0)
+        {
+            return null;
+        }
+
+        // Deterministic daily index based on UTC date hash
+        var today = DateTime.UtcNow.Date;
+        var seed = today.Year * 10000 + today.Month * 100 + today.Day;
+        var dayIndex = Math.Abs(seed) % count;
+
+        return await db.Quotes
+            .AsNoTracking()
+            .OrderBy(q => q.Id)
+            .Skip(dayIndex)
+            .Select(q => new QuoteResponse(
+                q.Id,
+                q.Text,
+                q.Author,
+                q.Category,
+                q.CreatedAtUtc,
+                q.Tags.OrderBy(t => t.Name).Select(t => t.Name).ToList()))
+            .FirstOrDefaultAsync(ct);
+    }
+
     public async Task<IReadOnlyList<QuoteResponse>> SearchAsync(string query, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(query))
