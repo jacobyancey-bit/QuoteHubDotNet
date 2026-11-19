@@ -72,11 +72,11 @@ public class EfQuoteService(QuoteDbContext db, ILogger<EfQuoteService> logger) :
             return [];
         }
 
-        var pattern = $"%{query.Trim()}%";
+        var pattern = $"%{query.Trim().ToLower()}%";
 
         return await db.Quotes
             .AsNoTracking()
-            .Where(q => EF.Functions.Like(q.Text, pattern) || EF.Functions.Like(q.Author, pattern))
+            .Where(q => EF.Functions.Like(q.Text.ToLower(), pattern) || EF.Functions.Like(q.Author.ToLower(), pattern))
             .OrderBy(q => q.Id)
             .Select(q => new QuoteResponse(q.Id, q.Text, q.Author, q.Category, q.CreatedAtUtc))
             .ToListAsync(ct);
