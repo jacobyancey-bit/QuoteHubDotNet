@@ -11,7 +11,8 @@ public record QuoteResponse(
     string Author,
     string Category,
     DateTime CreatedAtUtc,
-    IReadOnlyList<string> Tags
+    IReadOnlyList<string> Tags,
+    int LikesCount = 0
 );
 
 /// <summary>
@@ -69,4 +70,20 @@ public record TokenResponse(
     string TokenType,
     DateTime ExpiresAtUtc,
     string Role
+);
+
+// Discord Webhook Embed structures (Drop-in compatible with Discord Webhooks API)
+public record DiscordEmbedAuthor(string Name);
+public record DiscordEmbedFooter(string Text);
+public record DiscordEmbed(
+    string Title,
+    string Description,
+    int Color,
+    DiscordEmbedAuthor Author,
+    DiscordEmbedFooter Footer,
+    DateTime Timestamp
+);
+public record DiscordWebhookPayload(
+    string Username,
+    IReadOnlyList<DiscordEmbed> Embeds
 );

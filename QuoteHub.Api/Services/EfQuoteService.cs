@@ -39,13 +39,8 @@ public class EfQuoteService(QuoteDbContext db, ILogger<EfQuoteService> logger) :
             .OrderBy(q => q.Id)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(q => new QuoteResponse(
-                q.Id,
-                q.Text,
-                q.Author,
-                q.Category,
-                q.CreatedAtUtc,
-                q.Tags.OrderBy(t => t.Name).Select(t => t.Name).ToList()))
+            .Include(q => q.Tags)
+            .Select(q => ToResponse(q))
             .ToListAsync(ct);
 
         return new PagedResult<QuoteResponse>(items, page, pageSize, totalCount);
@@ -53,17 +48,12 @@ public class EfQuoteService(QuoteDbContext db, ILogger<EfQuoteService> logger) :
 
     public async Task<QuoteResponse?> GetByIdAsync(int id, CancellationToken ct = default)
     {
-        return await db.Quotes
+        var quote = await db.Quotes
             .AsNoTracking()
-            .Where(q => q.Id == id)
-            .Select(q => new QuoteResponse(
-                q.Id,
-                q.Text,
-                q.Author,
-                q.Category,
-                q.CreatedAtUtc,
-                q.Tags.OrderBy(t => t.Name).Select(t => t.Name).ToList()))
-            .FirstOrDefaultAsync(ct);
+            .Include(q => q.Tags)
+            .FirstOrDefaultAsync(q => q.Id == id, ct);
+
+        return quote is null ? null : ToResponse(quote);
     }
 
     public async Task<QuoteResponse?> GetRandomAsync(CancellationToken ct = default)
@@ -80,13 +70,7 @@ public class EfQuoteService(QuoteDbContext db, ILogger<EfQuoteService> logger) :
             .AsNoTracking()
             .OrderBy(q => q.Id)
             .Skip(skip)
-            .Select(q => new QuoteResponse(
-                q.Id,
-                q.Text,
-                q.Author,
-                q.Category,
-                q.CreatedAtUtc,
-                q.Tags.OrderBy(t => t.Name).Select(t => t.Name).ToList()))
+            .Select(q => ToResponse(q))
             .FirstOrDefaultAsync(ct);
     }
 
@@ -98,7 +82,6 @@ public class EfQuoteService(QuoteDbContext db, ILogger<EfQuoteService> logger) :
             return null;
         }
 
-        // Deterministic daily index based on UTC date hash
         var today = DateTime.UtcNow.Date;
         var seed = today.Year * 10000 + today.Month * 100 + today.Day;
         var dayIndex = Math.Abs(seed) % count;
@@ -107,14 +90,36 @@ public class EfQuoteService(QuoteDbContext db, ILogger<EfQuoteService> logger) :
             .AsNoTracking()
             .OrderBy(q => q.Id)
             .Skip(dayIndex)
-            .Select(q => new QuoteResponse(
-                q.Id,
-                q.Text,
-                q.Author,
-                q.Category,
-                q.CreatedAtUtc,
-                q.Tags.OrderBy(t => t.Name).Select(t => t.Name).ToList()))
+            .Select(q => ToResponse(q))
             .FirstOrDefaultAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<QuoteResponse>> GetTopQuotesAsync(int limit = 10, CancellationToken ct = default)
+    {
+        limit = Math.Clamp(limit, 1, 50);
+
+        return await db.Quotes
+            .AsNoTracking()
+            .OrderByDescending(q => q.LikesCount)
+            .ThenBy(q => q.Id)
+            .Take(limit)
+            .Select(q => ToResponse(q))
+            .ToListAsync(ct);
+    }
+
+    public async Task<int?> LikeQuoteAsync(int id, CancellationToken ct = default)
+    {
+        var quote = await db.Quotes.FirstOrDefaultAsync(q => q.Id == id, ct);
+        if (quote is null)
+        {
+            return null;
+        }
+
+        quote.LikesCount++;
+        await db.SaveChangesAsync(ct);
+
+        logger.LogInformation("Liked quote {QuoteId}. New LikesCount: {Likes}", quote.Id, quote.LikesCount);
+        return quote.LikesCount;
     }
 
     public async Task<IReadOnlyList<QuoteResponse>> SearchAsync(string query, CancellationToken ct = default)
@@ -130,13 +135,7 @@ public class EfQuoteService(QuoteDbContext db, ILogger<EfQuoteService> logger) :
             .AsNoTracking()
             .Where(q => EF.Functions.Like(q.Text.ToLower(), pattern) || EF.Functions.Like(q.Author.ToLower(), pattern))
             .OrderBy(q => q.Id)
-            .Select(q => new QuoteResponse(
-                q.Id,
-                q.Text,
-                q.Author,
-                q.Category,
-                q.CreatedAtUtc,
-                q.Tags.OrderBy(t => t.Name).Select(t => t.Name).ToList()))
+            .Select(q => ToResponse(q))
             .ToListAsync(ct);
     }
 
@@ -251,5 +250,6 @@ public class EfQuoteService(QuoteDbContext db, ILogger<EfQuoteService> logger) :
             quote.Author,
             quote.Category,
             quote.CreatedAtUtc,
-            quote.Tags.OrderBy(t => t.Name).Select(t => t.Name).ToList());
+            quote.Tags.OrderBy(t => t.Name).Select(t => t.Name).ToList(),
+            quote.LikesCount);
 }

@@ -47,13 +47,102 @@ public class QuotesController(IQuoteService quoteService, IOutputCacheStore cach
 
     [HttpGet("daily")]
     [AllowAnonymous]
-    [OutputCache(Duration = 3600)] // Cache for 1 hour
+    [OutputCache(Duration = 3600)]
     [ProducesResponseType(typeof(QuoteResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<QuoteResponse>> GetDaily(CancellationToken ct)
     {
         var quote = await quoteService.GetDailyQuoteAsync(ct);
         return quote is null ? NotFound() : Ok(quote);
+    }
+
+    /// <summary>
+    /// Returns the top-voted quotes for popular leaderboards.
+    /// </summary>
+    [HttpGet("top")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(IReadOnlyList<QuoteResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<QuoteResponse>>> GetTop(
+        [FromQuery] int limit = 10,
+        CancellationToken ct = default)
+    {
+        return Ok(await quoteService.GetTopQuotesAsync(limit, ct));
+    }
+
+    /// <summary>
+    /// Upvotes / likes a quote. Publicly accessible.
+    /// </summary>
+    [HttpPost("{id:int}/like")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Like(int id, CancellationToken ct)
+    {
+        var newLikes = await quoteService.LikeQuoteAsync(id, ct);
+        if (newLikes is null)
+        {
+            return NotFound();
+        }
+
+        await cacheStore.EvictByTagAsync("quotes", ct);
+        return Ok(new { id, likes = newLikes });
+    }
+
+    /// <summary>
+    /// Formats a quote into a ready-to-post Discord Webhook Rich Embed.
+    /// Perfect for Discord and Slack bot creators.
+    /// </summary>
+    [HttpGet("{id:int}/discord")]
+    [HttpGet("daily/discord")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(DiscordWebhookPayload), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<DiscordWebhookPayload>> GetDiscordEmbed(int? id, CancellationToken ct)
+    {
+        var quote = id.HasValue
+            ? await quoteService.GetByIdAsync(id.Value, ct)
+            : await quoteService.GetDailyQuoteAsync(ct);
+
+        if (quote is null)
+        {
+            return NotFound();
+        }
+
+        var tagsText = quote.Tags.Count > 0 ? " • #" + string.Join(" #", quote.Tags) : "";
+        var embed = new DiscordEmbed(
+            Title: $"{quote.Category} Quote of the Day",
+            Description: $"*{quote.Text}*\n\n**— {quote.Author}**",
+            Color: 0x38bdf8, // Sky Blue
+            Author: new DiscordEmbedAuthor("QuoteHub Bot"),
+            Footer: new DiscordEmbedFooter($"QuoteHub API{tagsText}"),
+            Timestamp: quote.CreatedAtUtc
+        );
+
+        return Ok(new DiscordWebhookPayload("QuoteHub Bot", [embed]));
+    }
+
+    /// <summary>
+    /// Generates a dynamic SVG quote card vector image for social embeds, Discord, and websites.
+    /// </summary>
+    [HttpGet("{id:int}/card.svg")]
+    [HttpGet("daily/card.svg")]
+    [AllowAnonymous]
+    [Produces("image/svg+xml")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetCardSvg(int? id, [FromQuery] string theme = "dark", CancellationToken ct = default)
+    {
+        var quote = id.HasValue
+            ? await quoteService.GetByIdAsync(id.Value, ct)
+            : await quoteService.GetDailyQuoteAsync(ct);
+
+        if (quote is null)
+        {
+            return NotFound();
+        }
+
+        var svg = CardGenerator.GenerateSvg(quote, theme);
+        return Content(svg, "image/svg+xml; charset=utf-8");
     }
 
     [HttpGet("search")]

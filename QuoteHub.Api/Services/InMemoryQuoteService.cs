@@ -17,7 +17,8 @@ public class InMemoryQuoteService : IQuoteService
             Text = "Like what you do, and then you will do your best.",
             Author = "Katherine Johnson",
             Category = "Space",
-            CreatedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+            CreatedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            LikesCount = 12
         },
         new Quote
         {
@@ -25,7 +26,8 @@ public class InMemoryQuoteService : IQuoteService
             Text = "The most dangerous phrase in the language is, 'We've always done it this way.'",
             Author = "Grace Hopper",
             Category = "Engineering",
-            CreatedAtUtc = new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Utc)
+            CreatedAtUtc = new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Utc),
+            LikesCount = 25
         },
         new Quote
         {
@@ -33,7 +35,8 @@ public class InMemoryQuoteService : IQuoteService
             Text = "Simplicity is prerequisite for reliability.",
             Author = "Edsger W. Dijkstra",
             Category = "Engineering",
-            CreatedAtUtc = new DateTime(2026, 1, 3, 0, 0, 0, DateTimeKind.Utc)
+            CreatedAtUtc = new DateTime(2026, 1, 3, 0, 0, 0, DateTimeKind.Utc),
+            LikesCount = 8
         }
     ];
 
@@ -113,6 +116,39 @@ public class InMemoryQuoteService : IQuoteService
             var dayIndex = Math.Abs(seed) % active.Count;
 
             return Task.FromResult<QuoteResponse?>(ToResponse(active[dayIndex]));
+        }
+    }
+
+    public Task<IReadOnlyList<QuoteResponse>> GetTopQuotesAsync(int limit = 10, CancellationToken ct = default)
+    {
+        limit = Math.Clamp(limit, 1, 50);
+
+        lock (_lock)
+        {
+            IReadOnlyList<QuoteResponse> top = _quotes
+                .Where(q => !q.IsDeleted)
+                .OrderByDescending(q => q.LikesCount)
+                .ThenBy(q => q.Id)
+                .Take(limit)
+                .Select(ToResponse)
+                .ToList();
+
+            return Task.FromResult(top);
+        }
+    }
+
+    public Task<int?> LikeQuoteAsync(int id, CancellationToken ct = default)
+    {
+        lock (_lock)
+        {
+            var quote = _quotes.FirstOrDefault(q => q.Id == id && !q.IsDeleted);
+            if (quote is null)
+            {
+                return Task.FromResult<int?>(null);
+            }
+
+            quote.LikesCount++;
+            return Task.FromResult<int?>(quote.LikesCount);
         }
     }
 
@@ -217,5 +253,6 @@ public class InMemoryQuoteService : IQuoteService
             quote.Author,
             quote.Category,
             quote.CreatedAtUtc,
-            quote.Tags.OrderBy(t => t.Name).Select(t => t.Name).ToList());
+            quote.Tags.OrderBy(t => t.Name).Select(t => t.Name).ToList(),
+            quote.LikesCount);
 }

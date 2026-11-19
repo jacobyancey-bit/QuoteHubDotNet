@@ -93,6 +93,42 @@ public class QuotesApiIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task GetDailyDiscord_ReturnsValidDiscordWebhookPayload()
+    {
+        var response = await _client.GetAsync("/api/v1/quotes/daily/discord");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var payload = await response.Content.ReadFromJsonAsync<DiscordWebhookPayload>();
+        Assert.NotNull(payload);
+        Assert.Equal("QuoteHub Bot", payload.Username);
+        var embed = Assert.Single(payload.Embeds);
+        Assert.Contains("Quote of the Day", embed.Title);
+    }
+
+    [Fact]
+    public async Task GetCardSvg_ReturnsSvgImage()
+    {
+        var response = await _client.GetAsync("/api/v1/quotes/1/card.svg");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("image/svg+xml", response.Content.Headers.ContentType?.MediaType);
+
+        var svgContent = await response.Content.ReadAsStringAsync();
+        Assert.StartsWith("<svg", svgContent);
+        Assert.Contains("Katherine Johnson", svgContent);
+    }
+
+    [Fact]
+    public async Task Like_IncrementsQuoteLikesAndAppearsInTop()
+    {
+        var likeResp = await _client.PostAsync("/api/v1/quotes/1/like", null);
+        Assert.Equal(HttpStatusCode.OK, likeResp.StatusCode);
+
+        var topResp = await _client.GetFromJsonAsync<List<QuoteResponse>>("/api/v1/quotes/top?limit=5");
+        Assert.NotNull(topResp);
+        Assert.NotEmpty(topResp);
+    }
+
+    [Fact]
     public async Task GetAll_SupportsV1RouteAndPagination()
     {
         var response = await _client.GetAsync("/api/v1/quotes?page=1&pageSize=2");

@@ -8,7 +8,10 @@ public class Quote
     public string Category { get; set; } = "General";
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
-    // Internal-only soft-delete fields — never exposed in API responses
+    // Upvote / Like count for community rankings
+    public int LikesCount { get; set; }
+
+    // Internal-only soft-delete fields
     public bool IsDeleted { get; set; }
     public DateTime? DeletedAtUtc { get; set; }
 
