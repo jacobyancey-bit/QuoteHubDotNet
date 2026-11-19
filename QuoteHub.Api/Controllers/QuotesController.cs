@@ -9,12 +9,14 @@ namespace QuoteHub.Api.Controllers;
 public class QuotesController(IQuoteService quoteService) : ControllerBase
 {
     [HttpGet]
-    [ProducesResponseType(typeof(IReadOnlyList<QuoteResponse>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<IReadOnlyList<QuoteResponse>>> GetAll(
+    [ProducesResponseType(typeof(PagedResult<QuoteResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<PagedResult<QuoteResponse>>> GetAll(
         [FromQuery] string? category = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
         CancellationToken ct = default)
     {
-        return Ok(await quoteService.GetAllAsync(category, ct));
+        return Ok(await quoteService.GetAllAsync(category, page, pageSize, ct));
     }
 
     [HttpGet("{id:int}")]

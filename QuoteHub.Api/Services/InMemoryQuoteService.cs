@@ -5,6 +5,7 @@ namespace QuoteHub.Api.Services;
 
 public class InMemoryQuoteService : IQuoteService
 {
+    private const int MaxPageSize = 100;
     private readonly Lock _lock = new();
     private int _nextId = 4;
 
@@ -36,8 +37,15 @@ public class InMemoryQuoteService : IQuoteService
         }
     ];
 
-    public Task<IReadOnlyList<QuoteResponse>> GetAllAsync(string? category = null, CancellationToken ct = default)
+    public Task<PagedResult<QuoteResponse>> GetAllAsync(
+        string? category = null,
+        int page = 1,
+        int pageSize = 20,
+        CancellationToken ct = default)
     {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
+
         lock (_lock)
         {
             var query = _quotes.Where(q => !q.IsDeleted);
@@ -48,8 +56,14 @@ public class InMemoryQuoteService : IQuoteService
                     q.Category.Equals(category.Trim(), StringComparison.OrdinalIgnoreCase));
             }
 
-            IReadOnlyList<QuoteResponse> results = query.Select(ToResponse).ToList();
-            return Task.FromResult(results);
+            var matched = query.OrderBy(q => q.Id).ToList();
+            var items = matched
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(ToResponse)
+                .ToList();
+
+            return Task.FromResult(new PagedResult<QuoteResponse>(items, page, pageSize, matched.Count));
         }
     }
 

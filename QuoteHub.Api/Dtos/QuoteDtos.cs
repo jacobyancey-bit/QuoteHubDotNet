@@ -14,6 +14,19 @@ public record QuoteResponse(
 );
 
 /// <summary>
+/// Standard pagination envelope for list endpoints.
+/// </summary>
+public record PagedResult<T>(
+    IReadOnlyList<T> Items,
+    int Page,
+    int PageSize,
+    int TotalCount
+)
+{
+    public int TotalPages => PageSize <= 0 ? 0 : (int)Math.Ceiling(TotalCount / (double)PageSize);
+}
+
+/// <summary>
 /// What clients send to create a new quote.
 /// </summary>
 public record CreateQuoteRequest(

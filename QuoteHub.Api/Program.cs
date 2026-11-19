@@ -1,24 +1,32 @@
 using Microsoft.EntityFrameworkCore;
 using QuoteHub.Api.Data;
+using QuoteHub.Api.Middleware;
 using QuoteHub.Api.Services;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+// Core API & OpenAPI services
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
+builder.Services.AddHealthChecks();
 
-// Register EF Core DbContext (automatically registered as Scoped!)
+// Global RFC 7807 ProblemDetails exception handling
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+
+// Data Access Layer (EF Core + SQLite, registered as Scoped)
 builder.Services.AddDbContext<QuoteDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// Register our EF Core-backed service as Scoped (matches QuoteDbContext's Scoped lifetime).
+// Business Logic Layer (Scoped to match QuoteDbContext's lifetime)
 builder.Services.AddScoped<IQuoteService, EfQuoteService>();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// HTTP request pipeline (order matters!)
+app.UseExceptionHandler();
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -28,11 +36,17 @@ if (app.Environment.IsDevelopment())
         options.DefaultHttpClient = new(ScalarTarget.CSharp, ScalarClient.HttpClient);
     });
 }
-
-app.UseHttpsRedirection();
+else
+{
+    app.UseHttpsRedirection();
+}
 
 app.UseAuthorization();
 
+app.MapHealthChecks("/health");
 app.MapControllers();
 
 app.Run();
+
+// Expose the implicit Program class so WebApplicationFactory<Program> can boot the API in integration tests.
+public partial class Program;

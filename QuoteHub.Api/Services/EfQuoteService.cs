@@ -5,10 +5,19 @@ using QuoteHub.Api.Models;
 
 namespace QuoteHub.Api.Services;
 
-public class EfQuoteService(QuoteDbContext db) : IQuoteService
+public class EfQuoteService(QuoteDbContext db, ILogger<EfQuoteService> logger) : IQuoteService
 {
-    public async Task<IReadOnlyList<QuoteResponse>> GetAllAsync(string? category = null, CancellationToken ct = default)
+    private const int MaxPageSize = 100;
+
+    public async Task<PagedResult<QuoteResponse>> GetAllAsync(
+        string? category = null,
+        int page = 1,
+        int pageSize = 20,
+        CancellationToken ct = default)
     {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
+
         var query = db.Quotes.AsNoTracking();
 
         if (!string.IsNullOrWhiteSpace(category))
@@ -17,10 +26,16 @@ public class EfQuoteService(QuoteDbContext db) : IQuoteService
             query = query.Where(q => q.Category.ToLower() == normalized);
         }
 
-        return await query
+        var totalCount = await query.CountAsync(ct);
+
+        var items = await query
             .OrderBy(q => q.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .Select(q => new QuoteResponse(q.Id, q.Text, q.Author, q.Category, q.CreatedAtUtc))
             .ToListAsync(ct);
+
+        return new PagedResult<QuoteResponse>(items, page, pageSize, totalCount);
     }
 
     public async Task<QuoteResponse?> GetByIdAsync(int id, CancellationToken ct = default)
@@ -82,12 +97,14 @@ public class EfQuoteService(QuoteDbContext db) : IQuoteService
         db.Quotes.Add(quote);
         await db.SaveChangesAsync(ct);
 
+        logger.LogInformation("Created quote {QuoteId} by {Author} in category {Category}",
+            quote.Id, quote.Author, quote.Category);
+
         return ToResponse(quote);
     }
 
     public async Task<QuoteResponse?> UpdateAsync(int id, UpdateQuoteRequest request, CancellationToken ct = default)
     {
-        // Tracked query (no AsNoTracking) so EF Core detects changes on SaveChangesAsync
         var quote = await db.Quotes.FirstOrDefaultAsync(q => q.Id == id, ct);
         if (quote is null)
         {
@@ -99,6 +116,8 @@ public class EfQuoteService(QuoteDbContext db) : IQuoteService
         quote.Category = request.Category.Trim();
 
         await db.SaveChangesAsync(ct);
+
+        logger.LogInformation("Updated quote {QuoteId}", quote.Id);
         return ToResponse(quote);
     }
 
@@ -112,6 +131,8 @@ public class EfQuoteService(QuoteDbContext db) : IQuoteService
 
         quote.IsDeleted = true;
         await db.SaveChangesAsync(ct);
+
+        logger.LogInformation("Soft-deleted quote {QuoteId}", quote.Id);
         return true;
     }
 
