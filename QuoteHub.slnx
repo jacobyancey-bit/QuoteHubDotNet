@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="QuoteHub.Api/QuoteHub.Api.csproj" />
+  <Project Path="QuoteHub.Tests/QuoteHub.Tests.csproj" />
+</Solution>

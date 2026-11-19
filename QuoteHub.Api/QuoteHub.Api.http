@@ -1,0 +1,35 @@
+@QuoteHub.Api_HostAddress = http://localhost:5254
+
+### Get all quotes
+GET {{QuoteHub.Api_HostAddress}}/api/quotes
+Accept: application/json
+
+### Filter quotes by category
+GET {{QuoteHub.Api_HostAddress}}/api/quotes?category=Space
+Accept: application/json
+
+### Get random quote
+GET {{QuoteHub.Api_HostAddress}}/api/quotes/random
+Accept: application/json
+
+### Create a new quote (returns 201 Created + Location header)
+POST {{QuoteHub.Api_HostAddress}}/api/quotes
+Content-Type: application/json
+
+{
+  "text": "Failure is not an option.",
+  "author": "Gene Kranz",
+  "category": "Space"
+}
+
+### Trigger automatic 400 validation error (Text too short, Author missing)
+POST {{QuoteHub.Api_HostAddress}}/api/quotes
+Content-Type: application/json
+
+{
+  "text": "Hi",
+  "author": ""
+}
+
+### Delete quote #1 (returns 204 No Content)
+DELETE {{QuoteHub.Api_HostAddress}}/api/quotes/1
